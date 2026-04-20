@@ -1,0 +1,66 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Orbitron:wght@400;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-display: "Orbitron", sans-serif;
+}
+
+:root {
+  --bg-main: #060b10;
+  --bg-side: #0a1118;
+  --bg-header: #0d161f;
+  --accent: #14b8a6;
+  --accent-hover: #0d9488;
+  --text-main: #e2e8f0;
+  --text-dim: #64748b;
+  --border: #1e293b;
+  
+  --radius: 0.5rem;
+  
+  --primary: var(--accent);
+  --primary-foreground: #000;
+  --muted: #1e293b;
+  --muted-foreground: #64748b;
+  --ring: var(--accent);
+}
+
+@layer base {
+  body {
+    @apply bg-[var(--bg-main)] text-[var(--text-main)] font-sans antialiased;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-main);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-dim);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Reef Suite Specifics */
+.reef-card {
+  @apply bg-[#0a1118] border border-[#1e293b] rounded-lg p-4;
+}
+
+.reef-button-primary {
+  @apply bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black font-bold py-2 px-4 rounded transition-all;
+}
+
+.reef-tab-active {
+  @apply text-[var(--accent)] border-b-2 border-[var(--accent)];
+}

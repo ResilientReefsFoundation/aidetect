@@ -1,0 +1,11 @@
+flask
+flask-cors
+flask-limiter
+ultralytics
+opencv-python
+pillow
+numpy
+icrawler
+yt-dlp
+selenium
+webdriver-manager

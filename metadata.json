@@ -1,0 +1,6 @@
+{
+  "name": "Marine Vision AI",
+  "description": "Professional image annotation and object detection tool for marine research, featuring YOLO-style detections and real-time analysis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

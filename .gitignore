@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.venv/
+
+# Build output
+dist/
+
+# Uploaded files & user data
+uploads/
+models/
+datasets/
+runs/
+
+# Environment
+.env
+.env.local
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Large media
+*.mp4
+*.avi
+*.mov
+
+# Incoming datasets
+datasets/_incoming/
