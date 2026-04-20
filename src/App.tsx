@@ -80,7 +80,7 @@ export default function App() {
         const match = text.match(/v(\d+\.\d+)/);
         if (match) {
           const latest = match[1];
-          const current = "4.41";
+          const current = "4.43";
           if (latest !== current) setUpdateAvailable(latest);
         }
       })
@@ -1256,7 +1256,7 @@ export default function App() {
           </div>
           <div className="hidden sm:block">
             <h1 className="font-bold text-lg tracking-tight text-white">Reef AI Detection Suite</h1>
-            <div className="text-[9px] font-mono text-[var(--text-dim)] tracking-widest">v4.41</div>
+            <div className="text-[9px] font-mono text-[var(--text-dim)] tracking-widest">v4.43</div>
           </div>
           <div className="block sm:hidden">
             <h1 className="font-bold text-sm tracking-tight text-white">Reef AI</h1>
@@ -1283,10 +1283,54 @@ export default function App() {
             <Trash2 className="w-3 h-3" /><span className="hidden sm:inline"> RESET</span>
           </Button>
           {updateAvailable && (
-            <a href="https://github.com/ResilientReefsFoundation/aidetect" target="_blank" rel="noreferrer"
-              className="bg-yellow-500/20 border border-yellow-500/50 rounded-full px-3 py-1 flex items-center gap-1.5 text-[10px] font-bold text-yellow-400 hover:bg-yellow-500/30 transition-colors">
-              ↑ v{updateAvailable} available
-            </a>
+            <button
+              className="bg-yellow-500/20 border border-yellow-500/50 rounded-full px-3 py-1 flex items-center gap-1.5 text-[10px] font-bold text-yellow-400 hover:bg-yellow-500/30 transition-colors"
+              onClick={async () => {
+                if (!confirm(`Update to v${updateAvailable}? The app will update automatically and you will need to restart.`)) return;
+                // Fetch latest release zip URL from GitHub
+                const toastId = toast.loading("Checking latest release...");
+                try {
+                  const rel = await fetch("https://api.github.com/repos/ResilientReefsFoundation/aidetect/releases/latest");
+                  const relData = await rel.json();
+                  const zipAsset = relData.assets?.find((a: any) => a.name.endsWith(".zip"));
+                  const zipUrl = zipAsset?.browser_download_url ?? null;
+                  if (!zipUrl) {
+                    toast.error("No release zip found — ask the developer to publish a release.", { id: toastId });
+                    return;
+                  }
+                  toast.loading("Downloading update...", { id: toastId });
+                  const r = await fetch("/api/update", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ zipUrl }),
+                  });
+                  const reader = r.body?.getReader();
+                  const decoder = new TextDecoder();
+                  if (!reader) return;
+                  let buf = "";
+                  while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buf += decoder.decode(value, { stream: true });
+                    const lines = buf.split("\n");
+                    buf = lines.pop() ?? "";
+                    for (const line of lines) {
+                      if (!line.startsWith("data:")) continue;
+                      try {
+                        const msg = JSON.parse(line.slice(5).trim());
+                        if (msg.stage === "error") toast.error(msg.message, { id: toastId });
+                        else if (msg.stage === "done") {
+                          toast.success("Update applied! Please close and reopen the app.", { id: toastId, duration: 10000 });
+                        } else toast.loading(msg.message, { id: toastId });
+                      } catch {}
+                    }
+                  }
+                } catch (err: any) {
+                  toast.error(err?.message ?? "Update failed", { id: toastId });
+                }
+              }}>
+              ↑ v{updateAvailable} available — click to update
+            </button>
           )}
           <div className="bg-black/40 border border-[var(--border)] rounded-full px-4 py-1 flex items-center gap-2">
             <div className={cn("w-2 h-2 rounded-full animate-pulse", anyModelReady ? "bg-emerald-500" : "bg-red-500")} />
@@ -1383,14 +1427,14 @@ export default function App() {
                             <Button size="sm" variant="outline" className="h-6 px-2 text-[9px] border-[var(--border)] text-[var(--text-dim)]" onClick={() => setRenamingModel(null)}>✕</Button>
                           </div>
                         ) : (
-                          <div className="flex gap-1">
-                            <select className="flex-1 bg-black/40 border border-[var(--border)] rounded px-2 py-1 text-[9px] text-[var(--text-dim)]"
+                          <div className="grid grid-cols-2 gap-1 w-full">
+                            <select className="w-full bg-black/40 border border-[var(--border)] rounded px-2 py-1 text-[9px] text-[var(--text-dim)] truncate"
                               defaultValue=""
                               onChange={e => { if (e.target.value) setRenamingModel({ name: e.target.value, value: e.target.value.replace(/\.pt$/, "").replace(/\.onnx$/, "") }); e.target.value = ""; }}>
                               <option value="">✏ Rename…</option>
                               {savedModels.map(sm => <option key={sm.name} value={sm.name}>{sm.name}</option>)}
                             </select>
-                            <select className="flex-1 bg-black/40 border border-red-500/30 rounded px-2 py-1 text-[9px] text-red-400"
+                            <select className="w-full bg-black/40 border border-red-500/30 rounded px-2 py-1 text-[9px] text-red-400 truncate"
                               defaultValue=""
                               onChange={e => { if (e.target.value) deleteModel(e.target.value); e.target.value = ""; }}>
                               <option value="">🗑 Delete…</option>

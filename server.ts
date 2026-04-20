@@ -91,6 +91,68 @@ async function startServer() {
     }
   });
 
+  // Auto-update — download latest release zip from GitHub and extract
+  app.post("/api/update", async (req: Request, res: Response) => {
+    const { zipUrl } = req.body;
+    if (!zipUrl || typeof zipUrl !== "string") return res.status(400).json({ error: "Missing zipUrl" });
+    if (!zipUrl.startsWith("https://github.com/") && !zipUrl.startsWith("https://objects.githubusercontent.com/")) {
+      return res.status(400).json({ error: "Only GitHub URLs allowed" });
+    }
+    try {
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("X-Accel-Buffering", "no");
+      const sse = (obj: object) => res.write("data: " + JSON.stringify(obj) + "\n\n");
+
+      sse({ stage: "downloading", message: "Downloading update..." });
+
+      const response = await fetch(zipUrl);
+      if (!response.ok) { sse({ stage: "error", message: "Download failed: " + response.status }); res.end(); return; }
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+      const sizeMB = (buffer.length / 1024 / 1024).toFixed(1);
+      sse({ stage: "extracting", message: `Downloaded ${sizeMB}MB, extracting...` });
+
+      // Write zip to temp file
+      const tmpZip = path.join(process.cwd(), "_update_tmp.zip");
+      fs.writeFileSync(tmpZip, buffer);
+
+      // Extract using PowerShell (built into Windows)
+      const { execSync } = await import("child_process");
+      const projectDir = process.cwd();
+      execSync(`powershell -Command "Expand-Archive -Path '${tmpZip}' -DestinationPath '${projectDir}_update_extract' -Force"`, { timeout: 60000 });
+
+      // Find the inner folder (zip contains reef-output/)
+      const extractDir = projectDir + "_update_extract";
+      const innerDirs = fs.readdirSync(extractDir);
+      const innerDir = path.join(extractDir, innerDirs[0]);
+
+      // Copy files over, skipping protected folders
+      const skip = new Set(["node_modules", ".venv", "models", "datasets", "uploads", "runs", ".git", ".env"]);
+      const copyDir = (src: string, dest: string) => {
+        if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+        for (const entry of fs.readdirSync(src)) {
+          if (skip.has(entry)) continue;
+          const srcPath = path.join(src, entry);
+          const destPath = path.join(dest, entry);
+          if (fs.statSync(srcPath).isDirectory()) copyDir(srcPath, destPath);
+          else fs.copyFileSync(srcPath, destPath);
+        }
+      };
+      copyDir(innerDir, projectDir);
+
+      // Cleanup
+      fs.unlinkSync(tmpZip);
+      execSync(`powershell -Command "Remove-Item -Recurse -Force '${extractDir}'"`, { timeout: 30000 });
+
+      sse({ stage: "done", message: "Update applied! Please restart the app." });
+      res.end();
+    } catch (err: any) {
+      res.write("data: " + JSON.stringify({ stage: "error", message: err?.message ?? "Update failed" }) + "\n\n");
+      res.end();
+    }
+  });
+
   // Model management — delete and rename
   app.post("/api/model/delete", async (req: Request, res: Response) => {
     try {
