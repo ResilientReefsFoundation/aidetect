@@ -24,11 +24,10 @@ interface ModelEntry {
 }
 
 const DEFAULT_MODELS: ModelEntry[] = [
-  { id: "cots",      name: "CoTS Model",       type: "YOLOv8", status: "Not loaded" },
-  { id: "clam",      name: "Giant Clam Model", type: "YOLOv8", status: "Not loaded" },
-  { id: "bleaching", name: "Bleaching Model",  type: "YOLOv8", status: "Not loaded" },
-  { id: "fish",      name: "Fish Model",        type: "YOLOv8", status: "Not loaded" },
+  { id: "primary", name: "Step 1 — Upload a model to get started", type: "YOLOv8", status: "Ready to load" },
 ];
+
+const MODEL_PREFIXES = ["cots", "fish", "clam", "bleaching"];
 
 // Detection colours by label keyword
 function colorForLabel(label: string): string {
@@ -69,24 +68,8 @@ export default function App() {
   const [exportMode, setExportMode]           = useState<"annotated_only" | "all_processed">("annotated_only");
   const [augmentation, setAugmentation]       = useState<"off" | "standard" | "heavy">("heavy");
   const [modelName, setModelName]             = useState("");
+  const [theme, setTheme] = useState<"dark"|"light">(() => (localStorage.getItem("reef_theme") as any) || "dark");
   const [scrapeQuery, setScrapeQuery]       = useState("");
-  const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
-
-  // Check GitHub for latest version on mount
-  useEffect(() => {
-    fetch("https://raw.githubusercontent.com/ResilientReefsFoundation/aidetect/main/src/App.tsx")
-      .then(r => r.text())
-      .then(text => {
-        const match = text.match(/v(\d+\.\d+)/);
-        if (match) {
-          const latest = match[1];
-          const current = "4.43";
-          if (latest !== current) setUpdateAvailable(latest);
-        }
-      })
-      .catch(() => {}); // silent fail if offline
-  }, []);
-
   const [trainingHistory, setTrainingHistory] = useState<{
     date: string; modelName: string; mAP50: number; epochs: number;
     datasetSize: number; baseModel: string; notes?: string;
@@ -121,9 +104,9 @@ export default function App() {
 
   // ── Model picker for upload ─────────────────────────────────────────────────
   // Which model slot to upload into — default is COTS (first slot)
-  const [activeModelId, setActiveModelId] = useState("cots");
+  const [activeModelId, setActiveModelId] = useState("primary");
   // Ref so the upload handler always reads the current value without closure issues
-  const activeModelIdRef = useRef("cots");
+  const activeModelIdRef = useRef("primary");
   useEffect(() => { activeModelIdRef.current = activeModelId; }, [activeModelId]);
 
   // FIX: keep a ref to the latest models so runDetection never reads stale state
@@ -186,6 +169,14 @@ export default function App() {
   // Per-slot URL input state: { [modelId]: { visible: bool, value: string } }
   const [urlInputs, setUrlInputs] = useState<Record<string, { visible: boolean; value: string }>>({});
   const [renamingModel, setRenamingModel] = useState<{name: string; value: string} | null>(null);
+  const [manageExpanded, setManageExpanded] = useState(false);
+  const [datasetExpanded, setDatasetExpanded] = useState(false);
+
+  // Apply light/dark theme
+  useEffect(() => {
+    document.documentElement.classList.toggle("light", theme === "light");
+    localStorage.setItem("reef_theme", theme);
+  }, [theme]);
 
   const fetchTrainDatasets = () => {
     fetch("/api/train/datasets")
@@ -332,8 +323,9 @@ export default function App() {
   // ── Derived ─────────────────────────────────────────────────────────────────
   const filteredImages = useMemo(() => {
     if (filterMode === "detected")  return images.filter(img => img.detections.length > 0);
-    if (filterMode === "zero")      return images.filter(img => img.detections.length === 0);
+    if (filterMode === "zero")      return images.filter(img => img.status === "completed" && img.detections.length === 0);
     if (filterMode === "annotated") return images.filter(img => img.annotations.length > 0);
+    if (filterMode === "unannotated") return images.filter(img => img.annotations.length === 0 && img.detections.filter(d => !d.isFalsePositive).length === 0);
     return images;
   }, [images, filterMode]);
 
@@ -584,7 +576,7 @@ export default function App() {
         // Find first Ready model from ref
         const readyModel = modelsRef.current.find(m => m.status === "Ready" && m.path);
         if (!readyModel?.path) {
-          toast.error("No model loaded — upload a .pt file in the MODELS tab first.");
+          toast.error("Please load a model first — go to the MODELS tab to get started.");
           setImages(prev => prev.map(im => im.id === imageId ? { ...im, status: "idle" } : im));
           return;
         }
@@ -1127,7 +1119,7 @@ export default function App() {
       const d = await r.json();
       if (!r.ok) { toast.error(d.error ?? "Upload failed", { id: toastId }); return; }
 
-      toast.success(`Dataset ready — ${exportable.length} images uploaded`, { id: toastId });
+      toast.success(`Training dataset ready — ${exportable.length} ${exportMode === "negatives_only" ? "negative" : "annotated"} images`, { id: toastId });
       setTrainDatasetPath(d.dataset_path);
       fetchTrainDatasets();
       setActiveTab("train");
@@ -1221,16 +1213,16 @@ export default function App() {
     `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
 
   const tabs = [
-    { id: "setup",    label: "SETUP"       },
     { id: "models",   label: "1. MODELS"   },
     { id: "upload",   label: "2. UPLOAD"   },
     { id: "detect",   label: "3. DETECT"   },
     { id: "annotate", label: "4. ANNOTATE" },
     { id: "train",    label: "5. TRAIN"    },
-    { id: "export",   label: "EXPORT"      },
-    { id: "scrape",   label: "🔍 SCRAPE"    },
-    { id: "history",  label: "📊 HISTORY"   },
+    { id: "scrape",   label: "SCRAPE"      },
+    { id: "history",  label: "HISTORY"     },
+    { id: "setup",    label: "SETUP"       },
     { id: "remote",   label: "REMOTE ACCESS" },
+    { id: "export",   label: "EXPORT"      },
   ];
 
   const anyModelReady = models.some(m => m.status === "Ready");
@@ -1256,7 +1248,7 @@ export default function App() {
           </div>
           <div className="hidden sm:block">
             <h1 className="font-bold text-lg tracking-tight text-white">Reef AI Detection Suite</h1>
-            <div className="text-[9px] font-mono text-[var(--text-dim)] tracking-widest">v4.43</div>
+            <div className="text-[9px] font-mono text-[var(--text-dim)] tracking-widest">v4.79</div>
           </div>
           <div className="block sm:hidden">
             <h1 className="font-bold text-sm tracking-tight text-white">Reef AI</h1>
@@ -1277,65 +1269,20 @@ export default function App() {
             title="Load session from file">
             <DownloadCloud className="w-3 h-3" /><span className="hidden sm:inline">LOAD</span>
           </Button>
+          <Button variant="ghost" size="sm"
+            className="text-[14px] text-[var(--text-dim)] hover:text-white hover:bg-white/5 w-8 h-8 flex items-center justify-center"
+            onClick={() => setTheme((t: string) => t === "dark" ? "light" : "dark")}
+            title="Toggle light/dark mode">
+            {theme === "dark" ? "☀️" : "🌙"}
+          </Button>
           <div className="w-px h-4 bg-[var(--border)]" />
           <Button variant="ghost" size="sm" className="text-[10px] font-mono text-red-500 hover:text-red-400 hover:bg-red-500/10 gap-2"
-            onClick={() => { if (confirm("Clear all data and reload?")) { localStorage.clear(); window.location.reload(); } }}>
+            onClick={() => { if (confirm("Clear all data and reload?")) { const theme = localStorage.getItem("reef_theme"); localStorage.clear(); if (theme) localStorage.setItem("reef_theme", theme); window.location.reload(); } }}>
             <Trash2 className="w-3 h-3" /><span className="hidden sm:inline"> RESET</span>
           </Button>
-          {updateAvailable && (
-            <button
-              className="bg-yellow-500/20 border border-yellow-500/50 rounded-full px-3 py-1 flex items-center gap-1.5 text-[10px] font-bold text-yellow-400 hover:bg-yellow-500/30 transition-colors"
-              onClick={async () => {
-                if (!confirm(`Update to v${updateAvailable}? The app will update automatically and you will need to restart.`)) return;
-                // Fetch latest release zip URL from GitHub
-                const toastId = toast.loading("Checking latest release...");
-                try {
-                  const rel = await fetch("https://api.github.com/repos/ResilientReefsFoundation/aidetect/releases/latest");
-                  const relData = await rel.json();
-                  const zipAsset = relData.assets?.find((a: any) => a.name.endsWith(".zip"));
-                  const zipUrl = zipAsset?.browser_download_url ?? null;
-                  if (!zipUrl) {
-                    toast.error("No release zip found — ask the developer to publish a release.", { id: toastId });
-                    return;
-                  }
-                  toast.loading("Downloading update...", { id: toastId });
-                  const r = await fetch("/api/update", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ zipUrl }),
-                  });
-                  const reader = r.body?.getReader();
-                  const decoder = new TextDecoder();
-                  if (!reader) return;
-                  let buf = "";
-                  while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    buf += decoder.decode(value, { stream: true });
-                    const lines = buf.split("\n");
-                    buf = lines.pop() ?? "";
-                    for (const line of lines) {
-                      if (!line.startsWith("data:")) continue;
-                      try {
-                        const msg = JSON.parse(line.slice(5).trim());
-                        if (msg.stage === "error") toast.error(msg.message, { id: toastId });
-                        else if (msg.stage === "done") {
-                          toast.success("Update applied! Please close and reopen the app.", { id: toastId, duration: 10000 });
-                        } else toast.loading(msg.message, { id: toastId });
-                      } catch {}
-                    }
-                  }
-                } catch (err: any) {
-                  toast.error(err?.message ?? "Update failed", { id: toastId });
-                }
-              }}>
-              ↑ v{updateAvailable} available — click to update
-            </button>
-          )}
-          <div className="bg-black/40 border border-[var(--border)] rounded-full px-4 py-1 flex items-center gap-2">
-            <div className={cn("w-2 h-2 rounded-full animate-pulse", anyModelReady ? "bg-emerald-500" : "bg-red-500")} />
+          <div className="bg-black/40 border border-[var(--border)] rounded-full px-4 py-1 flex items-center gap-2"><div className={cn("w-2 h-2 rounded-full animate-pulse", anyModelReady ? "bg-emerald-500" : "bg-red-500")} />
             <span className="text-[10px] font-mono text-[var(--text-dim)]">
-              {anyModelReady ? "Model Ready" : "No model loaded"}
+              {anyModelReady ? "Model Ready" : "Load a model to begin"}
             </span>
           </div>
         </div>
@@ -1352,138 +1299,141 @@ export default function App() {
         ))}
       </nav>
 
+
+
       <main className="flex-1 flex overflow-hidden">
 
         {/* ══ MODELS ══════════════════════════════════════════════════════════ */}
         {activeTab === "models" && (
-          <div className="flex-1 p-8 overflow-y-auto no-scrollbar space-y-10">
+          <div className="flex-1 p-8 overflow-y-auto no-scrollbar">
+            <div className="max-w-2xl space-y-8">
 
-            {/* Model slots */}
-            <div>
-              <h2 className="text-2xl font-bold text-white uppercase tracking-widest mb-6">Your Models</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-                {models.map(m => (
-                  <div key={m.id} className={cn("reef-card space-y-4 transition-all",
-                    activeModelId === m.id ? "border-[var(--accent)]" : "")}>
-                    <div className="flex items-center gap-3">
-                      <Brain className="w-5 h-5 text-pink-500" />
-                      <div>
-                        <div className="text-sm font-bold text-white uppercase tracking-wider">{m.name}</div>
-                        <div className="text-[10px] text-[var(--text-dim)]">{m.type}</div>
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-white uppercase tracking-widest">Step 1 — Load a Detection Model</h2>
+                {anyModelReady && <Button className="reef-button-primary px-6 h-10 gap-2" onClick={() => setActiveTab("upload")}><span>Next Step →</span></Button>}
+              </div>
+
+              {/* Current model status */}
+              {(() => {
+                const m = models[0];
+                return (
+                  <div className="reef-card space-y-5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Brain className="w-6 h-6 text-pink-500" />
+                        <div>
+                          <div className="text-base font-bold text-white">{m.status === "Ready" ? m.name : ""}</div>
+                          {m.path && <div className="text-[10px] text-[var(--text-dim)] font-mono mt-0.5">{m.path.split(/[\\/]/).pop()}</div>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
                       </div>
                     </div>
-                    {/* Status badge */}
-                    <div className={cn("text-[11px] font-bold uppercase tracking-widest px-3 py-1 rounded-full w-fit",
-                      m.status === "Ready" ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/30" : "bg-red-500/10 text-red-500 border border-red-500/30")}>
-                      {m.status}
-                    </div>
-                    {m.path && (
-                      <div className="text-[9px] text-[var(--text-dim)] font-mono truncate" title={m.path}>{m.path.split(/[\\/]/).pop()}</div>
-                    )}
-                    {/* Option A — browse for a file */}
-                    <button
-                      className={cn("w-full border-2 border-dashed rounded-lg py-3 text-center transition-all text-[11px] font-bold uppercase tracking-wider",
-                        activeModelId === m.id ? "border-[var(--accent)] text-[var(--accent)]" : "border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--accent)] hover:text-[var(--accent)]")}
-                      onClick={() => { setActiveModelId(m.id); activeModelIdRef.current = m.id; modelInputRef.current?.click(); }}>
-                      {m.status === "Ready" ? "↑ Replace — browse file" : "↑ Browse for .pt / .onnx"}
+
+                    {/* Browse */}
+                    <button className="w-full border-2 border-dashed border-[var(--border)] rounded-lg py-4 text-center transition-all text-[11px] font-bold uppercase tracking-wider text-[var(--text-dim)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                      onClick={() => { setActiveModelId("primary"); activeModelIdRef.current = "primary"; modelInputRef.current?.click(); }}>
+                      {m.status === "Ready" ? "↑ Replace model — browse for .pt / .onnx" : "↑ Browse for a model file (.pt or .onnx)"}
                     </button>
 
-                    {/* Option B — filtered by slot prefix, with rename/delete */}
-                    <div className="space-y-2">
-                      <div className="relative">
-                        <select className="w-full bg-[#1a1a2e] border border-[var(--border)] rounded-lg px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-white appearance-none cursor-pointer hover:border-[var(--accent)] transition-all"
-                          value=""
-                          onChange={e => {
-                            const path = e.target.value; if (!path) return;
-                            setActiveModelId(m.id); activeModelIdRef.current = m.id;
-                            loadSavedModel(path, m.id);
-                          }}>
-                          <option value="">{savedModels.length === 0 ? "No saved models found" : "↓ Pick from models/ folder"}</option>
-                          {savedModels.filter(sm => sm.name.toLowerCase().startsWith(m.id)).length > 0 && (
-                            <optgroup label={"── " + m.id.toUpperCase() + " models ──"}>
-                              {savedModels.filter(sm => sm.name.toLowerCase().startsWith(m.id)).map(sm => (
-                                <option key={sm.path} value={sm.path}>{sm.name}</option>
-                              ))}
+                    {/* Pick from saved */}
+                    <div className="relative">
+                      <select className="w-full bg-[#1a1a2e] border border-[var(--border)] rounded-lg px-3 py-3 text-sm text-white appearance-none cursor-pointer hover:border-[var(--accent)] transition-all"
+                        value=""
+                        onChange={e => {
+                          const path = e.target.value; if (!path) return;
+                          setActiveModelId("primary"); activeModelIdRef.current = "primary";
+                          loadSavedModel(path, "primary");
+                        }}>
+                        <option value="">{savedModels.length === 0 ? "No saved models yet — train one or browse for a file" : "↓ Pick from models/ folder"}</option>
+                        {MODEL_PREFIXES.map(prefix => {
+                          const prefixed = savedModels.filter(sm => sm.name.toLowerCase().startsWith(prefix));
+                          return prefixed.length > 0 ? (
+                            <optgroup key={prefix} label={"── " + prefix.toUpperCase() + " ──"}>
+                              {prefixed.map(sm => <option key={sm.path} value={sm.path}>{sm.name}</option>)}
                             </optgroup>
-                          )}
-                          {savedModels.filter(sm => !sm.name.toLowerCase().startsWith(m.id)).length > 0 && (
-                            <optgroup label="── Other models ──">
-                              {savedModels.filter(sm => !sm.name.toLowerCase().startsWith(m.id)).map(sm => (
-                                <option key={sm.path} value={sm.path}>{sm.name}</option>
-                              ))}
-                            </optgroup>
-                          )}
-                        </select>
-                        <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[var(--text-dim)]">▾</div>
-                      </div>
-                      {savedModels.length > 0 && (
-                        renamingModel ? (
-                          <div className="flex gap-1">
-                            <input autoFocus type="text" value={renamingModel.value}
-                              onChange={e => setRenamingModel({ ...renamingModel, value: e.target.value })}
-                              onKeyDown={e => { if (e.key === "Enter") renameModel(renamingModel.name, renamingModel.value); if (e.key === "Escape") setRenamingModel(null); }}
-                              className="flex-1 bg-black/40 border border-[var(--accent)] rounded px-2 py-1 text-[10px] text-white font-mono focus:outline-none" />
-                            <Button size="sm" className="reef-button-primary h-6 px-2 text-[9px]" onClick={() => renameModel(renamingModel.name, renamingModel.value)}>Save</Button>
-                            <Button size="sm" variant="outline" className="h-6 px-2 text-[9px] border-[var(--border)] text-[var(--text-dim)]" onClick={() => setRenamingModel(null)}>✕</Button>
-                          </div>
-                        ) : (
-                          <div className="grid grid-cols-2 gap-1 w-full">
-                            <select className="w-full bg-black/40 border border-[var(--border)] rounded px-2 py-1 text-[9px] text-[var(--text-dim)] truncate"
-                              defaultValue=""
-                              onChange={e => { if (e.target.value) setRenamingModel({ name: e.target.value, value: e.target.value.replace(/\.pt$/, "").replace(/\.onnx$/, "") }); e.target.value = ""; }}>
-                              <option value="">✏ Rename…</option>
-                              {savedModels.map(sm => <option key={sm.name} value={sm.name}>{sm.name}</option>)}
-                            </select>
-                            <select className="w-full bg-black/40 border border-red-500/30 rounded px-2 py-1 text-[9px] text-red-400 truncate"
-                              defaultValue=""
-                              onChange={e => { if (e.target.value) deleteModel(e.target.value); e.target.value = ""; }}>
-                              <option value="">🗑 Delete…</option>
-                              {savedModels.map(sm => <option key={sm.name} value={sm.name}>{sm.name}</option>)}
-                            </select>
-                          </div>
-                        )
-                      )}
+                          ) : null;
+                        })}
+                        {savedModels.filter(sm => !MODEL_PREFIXES.some(p => sm.name.toLowerCase().startsWith(p))).length > 0 && (
+                          <optgroup label="── OTHER ──">
+                            {savedModels.filter(sm => !MODEL_PREFIXES.some(p => sm.name.toLowerCase().startsWith(p))).map(sm => (
+                              <option key={sm.path} value={sm.path}>{sm.name}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[var(--text-dim)]">▾</div>
                     </div>
 
-                    {/* Option C — paste a URL */}
-                    {urlInputs[m.id]?.visible ? (
+                    {/* Load from URL */}
+                    {urlInputs["primary"]?.visible ? (
                       <div className="space-y-2">
-                        <input
-                          autoFocus
-                          type="url"
-                          placeholder="https://example.com/model.pt"
-                          value={urlInputs[m.id]?.value ?? ""}
-                          onChange={e => setUrlInputs(prev => ({ ...prev, [m.id]: { visible: true, value: e.target.value } }))}
+                        <input autoFocus type="url" placeholder="https://example.com/model.pt"
+                          value={urlInputs["primary"]?.value ?? ""}
+                          onChange={e => setUrlInputs(prev => ({ ...prev, primary: { visible: true, value: e.target.value } }))}
                           onKeyDown={e => {
-                            if (e.key === "Enter") loadModelFromUrl(urlInputs[m.id]?.value ?? "", m.id);
-                            if (e.key === "Escape") setUrlInputs(prev => ({ ...prev, [m.id]: { visible: false, value: "" } }));
+                            if (e.key === "Enter") loadModelFromUrl(urlInputs["primary"]?.value ?? "", "primary");
+                            if (e.key === "Escape") setUrlInputs(prev => ({ ...prev, primary: { visible: false, value: "" } }));
                           }}
-                          className="w-full bg-black/40 border border-[var(--accent)]/50 rounded-lg px-3 py-2 text-[11px] text-white placeholder-[var(--text-dim)] focus:border-[var(--accent)] outline-none"
-                        />
+                          className="w-full bg-black/40 border border-[var(--accent)]/50 rounded-lg px-3 py-2 text-sm text-white placeholder-[var(--text-dim)] focus:border-[var(--accent)] outline-none" />
                         <div className="flex gap-2">
-                          <Button size="sm" className="flex-1 reef-button-primary h-8 text-[10px]"
-                            onClick={() => loadModelFromUrl(urlInputs[m.id]?.value ?? "", m.id)}>
-                            Download
-                          </Button>
-                          <Button size="sm" variant="outline" className="h-8 text-[10px] border-[var(--border)] text-[var(--text-dim)]"
-                            onClick={() => setUrlInputs(prev => ({ ...prev, [m.id]: { visible: false, value: "" } }))}>
-                            Cancel
-                          </Button>
+                          <Button size="sm" className="flex-1 reef-button-primary h-9" onClick={() => loadModelFromUrl(urlInputs["primary"]?.value ?? "", "primary")}>Download</Button>
+                          <Button size="sm" variant="outline" className="h-9 border-[var(--border)] text-[var(--text-dim)]" onClick={() => setUrlInputs(prev => ({ ...prev, primary: { visible: false, value: "" } }))}>Cancel</Button>
                         </div>
                       </div>
                     ) : (
-                      <button
-                        className="w-full border border-[var(--border)] rounded-lg py-2 text-center transition-all text-[11px] font-bold uppercase tracking-wider text-[var(--text-dim)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
-                        onClick={() => setUrlInputs(prev => ({ ...prev, [m.id]: { visible: true, value: "" } }))}>
+                      <button className="w-full border border-[var(--border)] rounded-lg py-2 text-center text-[11px] font-bold uppercase tracking-wider text-[var(--text-dim)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-all"
+                        onClick={() => setUrlInputs(prev => ({ ...prev, primary: { visible: true, value: "" } }))}>
                         🔗 Load from URL
                       </button>
                     )}
                   </div>
-                ))}
-              </div>
+                );
+              })()}
+
+              {/* Rename / Delete — collapsible */}
+              {savedModels.length > 0 && (
+                <div className="reef-card space-y-3">
+                  <button className="w-full flex items-center justify-between"
+                    onClick={() => setManageExpanded(p => !p)}>
+                    <h3 className="text-[10px] font-bold text-[var(--text-dim)] uppercase tracking-widest">
+                      Manage Saved Models ({savedModels.length})
+                    </h3>
+                    <span className="text-[var(--text-dim)] text-sm">{manageExpanded ? "▲" : "▼"}</span>
+                  </button>
+                  {manageExpanded && (
+                    renamingModel ? (
+                      <div className="flex gap-2">
+                        <input autoFocus type="text" value={renamingModel.value}
+                          onChange={e => setRenamingModel({ ...renamingModel, value: e.target.value })}
+                          onKeyDown={e => { if (e.key === "Enter") renameModel(renamingModel.name, renamingModel.value); if (e.key === "Escape") setRenamingModel(null); }}
+                          className="flex-1 bg-black/40 border border-[var(--accent)] rounded px-3 py-2 text-sm text-white font-mono focus:outline-none" />
+                        <Button className="reef-button-primary" onClick={() => renameModel(renamingModel.name, renamingModel.value)}>Save</Button>
+                        <Button variant="outline" className="border-[var(--border)] text-[var(--text-dim)]" onClick={() => setRenamingModel(null)}>✕</Button>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {savedModels.map(sm => (
+                          <div key={sm.name} className="flex items-center gap-2 p-2 bg-black/20 rounded border border-[var(--border)]">
+                            <span className="flex-1 text-[11px] font-mono text-white truncate">{sm.name}</span>
+                            <Button size="sm" variant="outline" className="h-7 px-2 text-[9px] border-[var(--border)] text-[var(--text-dim)] hover:text-white"
+                              onClick={() => setRenamingModel({ name: sm.name, value: sm.name.replace(/\.pt$/, "").replace(/\.onnx$/, "") })}>
+                              ✏ Rename
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-7 px-2 text-[9px] border-red-500/30 text-red-400 hover:bg-red-500/10"
+                              onClick={() => deleteModel(sm.name)}>
+                              🗑 Delete
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+
               <input type="file" ref={modelInputRef} onChange={handleModelUpload} accept=".pt,.onnx" className="hidden" />
             </div>
-
           </div>
         )}
 
@@ -1574,7 +1524,19 @@ export default function App() {
         {activeTab === "upload" && (
           <div className="flex-1 p-8 overflow-y-auto no-scrollbar space-y-8">
             <div className="max-w-3xl space-y-8">
-              <h2 className="text-2xl font-bold text-white uppercase tracking-widest">Upload Survey Images</h2>
+              <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold text-white uppercase tracking-widest">Step 2 — Add Your Images</h2>
+              {images.length > 0 && (
+              <div className="flex gap-2">
+                <Button className="reef-button-primary px-6 h-10 gap-2" onClick={() => setActiveTab("detect")}>Next Step →</Button>
+                <Button variant="outline" className="px-4 h-10 text-[11px] border-[var(--border)] text-[var(--text-dim)] hover:text-white hover:border-[var(--accent)]"
+                  onClick={() => { setFilterMode("all"); setActiveTab("annotate"); }}
+                  title="Skip detection and manually draw boxes on all images">
+                  ✏ Skip to Manual Annotate
+                </Button>
+              </div>
+            )}
+            </div>
               <div
                 className={cn("border-2 border-dashed rounded-xl p-16 text-center transition-colors cursor-pointer bg-black/20",
                   isDraggingOver ? "border-[var(--accent)] bg-[var(--accent)]/5 scale-[1.01]" : "border-[var(--border)] hover:border-[var(--accent)]")}
@@ -1737,15 +1699,7 @@ export default function App() {
                 <p className="text-[10px] text-[var(--text-dim)]">Requires <span className="font-mono text-white">yt-dlp</span> — installed automatically by <span className="font-mono text-white">setup_dependencies.bat</span></p>
               </div>
 
-              {images.length > 0 && (
-                <div className="flex items-center justify-between p-4 reef-card bg-emerald-500/5 border-emerald-500/20">
-                  <div>
-                    <div className="text-sm font-bold text-white">Ready for Detection</div>
-                    <div className="text-xs text-[var(--text-dim)] mt-1">Go to DETECT tab to run the AI.</div>
-                  </div>
-                  <Button className="reef-button-primary" onClick={() => setActiveTab("detect")}>Go to Detect →</Button>
-                </div>
-              )}
+
 
             </div>
           </div>
@@ -1755,13 +1709,16 @@ export default function App() {
         {activeTab === "detect" && (
           <div className="flex-1 p-8 overflow-y-auto no-scrollbar space-y-8">
             <div className="max-w-5xl space-y-8">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Target className="w-8 h-8 text-pink-500" />
-                  <h2 className="text-2xl font-bold text-white uppercase tracking-widest">Run AI Detection</h2>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl font-bold text-white uppercase tracking-widest">Step 3 — Run AI Detection</h2>
+                  {images.filter(i => i.status === "completed").length > 0 && !isProcessing && (
+                    <Button className="reef-button-primary px-6 h-10 gap-2" onClick={() => setActiveTab("annotate")}>
+                      Next Step →
+                    </Button>
+                  )}
                 </div>
-                {/* Inference mode toggle */}
-                <div className="flex bg-black/40 p-1 rounded border border-[var(--border)]">
+                <div className="flex bg-[var(--bg-side)] p-1 rounded border border-[var(--border)] w-fit gap-1">
                   {(["local", "cloud"] as const).map(m => (
                     <button key={m} onClick={() => setInferenceMode(m)}
                       className={cn("px-4 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest transition-all",
@@ -1772,12 +1729,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Model status warning */}
-              {inferenceMode === "local" && !anyModelReady && (
-                <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-400 space-y-1">
-                  <p>⚠ No model loaded — go to the <button className="underline font-bold" onClick={() => setActiveTab("models")}>MODELS tab</button> and upload a .pt file first.</p>
-                </div>
-              )}
+
 
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1804,7 +1756,7 @@ export default function App() {
                     {inferenceMode === "local" && (
                       <div className="text-[11px] text-[var(--text-dim)] border-t border-[var(--border)] pt-3">
                         Using: <span className={cn("font-bold", anyModelReady ? "text-emerald-400" : "text-red-400")}>
-                          {models.find(m => m.status === "Ready")?.name ?? "No model loaded"}
+                          {models.find(m => m.status === "Ready")?.name ?? "Load a model in the Models tab"}
                         </span>
                       </div>
                     )}
@@ -1828,10 +1780,10 @@ export default function App() {
                         </Button>
                       ) : (
                         <div className="flex flex-col gap-2 items-end">
-                          <Button className="reef-button-primary h-14 px-10 gap-3 text-lg"
+                          <Button className="reef-button-primary w-full h-20 gap-4 text-2xl font-bold tracking-widest"
                             disabled={images.length === 0 || (inferenceMode === "local" && !anyModelReady)}
                             onClick={runAllDetections}>
-                            <Play className="w-6 h-6" />RUN DETECTION
+                            <Play className="w-8 h-8" />RUN DETECTION
                           </Button>
                           {images.filter(i => i.status === "completed").length > 0 && (
                             <Button variant="outline" size="sm"
@@ -1840,7 +1792,8 @@ export default function App() {
                               onClick={() => {
                                 if (!confirm(`Reset all ${images.filter(i => i.status === "completed").length} processed images and clear their detections? This cannot be undone.`)) return;
                                 setImages(prev => prev.map(img => ({ ...img, status: "pending", detections: [] })));
-                                toast.success("All images reset — ready to re-run detection with new model");
+                                setActiveTab("models");
+                                toast.success("Detections cleared — load your new model then run detection again");
                               }}>
                               <Undo className="w-3 h-3" />Re-run with new model
                             </Button>
@@ -1884,6 +1837,7 @@ export default function App() {
                       <span className={cn("text-2xl font-bold", s.color)}>{s.value}</span>
                     </div>
                   ))}
+
                 </div>
               </div>
             </div>
@@ -1892,10 +1846,20 @@ export default function App() {
 
         {/* ══ ANNOTATE ════════════════════════════════════════════════════════ */}
         {activeTab === "annotate" && (
-          <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 flex flex-col overflow-hidden" ref={el => {
+            // Auto-select first image if none selected
+            if (el && !selectedImageId && filteredImages.length > 0) {
+              setTimeout(() => setSelectedImageId(filteredImages[0].id), 50);
+            }
+          }}>
 
             {/* ── Mode toggle ─────────────────────────────────────────────── */}
-            <div className="h-10 bg-[var(--bg-header)] border-b border-[var(--border)] flex items-center px-4 gap-2 flex-shrink-0">
+            <div className="px-6 py-4 bg-[var(--bg-main)] border-b border-[var(--border)] flex-shrink-0">
+              <div className="flex items-center justify-between mb-3">
+              <h2 className="text-2xl font-bold text-white uppercase tracking-widest">Step 4 — Review &amp; Annotate</h2>
+
+            </div>
+              <div className="flex items-center gap-2">
               {(["images", "video"] as const).map(m => (
                 <button key={m} onClick={() => setAnnotateMode(m)}
                   className={cn("px-4 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition-all",
@@ -1903,6 +1867,7 @@ export default function App() {
                   {m === "images" ? "📷  Images" : "🎬  Video"}
                 </button>
               ))}
+              </div>
             </div>
 
             {/* ── Images sub-mode ──────────────────────────────────────────── */}
@@ -1915,40 +1880,42 @@ export default function App() {
                 <h3 className="text-[10px] font-bold text-[var(--text-dim)] uppercase tracking-widest mb-3">FILTER</h3>
                 <div className="space-y-1">
                   {[
-                    { id: "all",        label: "All Images",        icon: LayoutGrid,   count: images.length },
-                    { id: "detected",   label: "With Detections",   icon: CheckCircle2, count: images.filter(i => i.detections.length > 0).length },
-                    { id: "zero",       label: "Zero Detections",   icon: XCircle,      count: images.filter(i => i.detections.length === 0).length },
-                    { id: "annotated",  label: "With Annotations",  icon: Target,       count: images.filter(i => i.annotations.length > 0).length },
+                    { id: "all",          label: "All Images",        icon: LayoutGrid,   count: images.length },
+                    { id: "detected",     label: "With Detections",   icon: CheckCircle2, count: images.filter(i => i.detections.length > 0).length },
+                    { id: "zero",         label: "Zero Detections",   icon: XCircle,      count: images.filter(i => i.status === "completed" && i.detections.length === 0).length },
+                    { id: "unannotated",  label: "Needs Annotation",  icon: Target,       count: images.filter(i => i.annotations.length === 0 && i.detections.filter(d => !d.isFalsePositive).length === 0).length },
+                    { id: "annotated",    label: "Done",              icon: CheckCircle2, count: images.filter(i => i.annotations.length > 0).length },
                   ].map(f => (
                     <button key={f.id} onClick={() => { setFilterMode(f.id as any); setZoom(1); setPanOffset({ x: 0, y: 0 }); }}
                       className={cn("w-full flex items-center gap-2 px-3 py-2 rounded border text-[10px] font-bold uppercase tracking-wider transition-all",
                         filterMode === f.id ? "bg-[var(--accent)]/10 border-[var(--accent)] text-[var(--accent)]" : "bg-black/20 border-[var(--border)] text-[var(--text-dim)] hover:text-white")}>
                       <f.icon className="w-3 h-3" />{f.label}
-                      <span className={cn("ml-auto font-mono", f.id === "annotated" && f.count > 0 ? "text-yellow-400 opacity-100" : "opacity-50")}>{f.count}</span>
+                      <span className={cn("ml-auto font-mono", f.id === "annotated" && f.count > 0 ? "text-yellow-400 opacity-100" : "")}>{f.count}</span>
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Detection list */}
+              {/* Detection list for current image */}
               <div>
-                <h3 className="text-[10px] font-bold text-[var(--text-dim)] uppercase tracking-widest mb-2">DETECTIONS &amp; ANNOTATIONS</h3>
-                {/* Summary counts — always visible so user knows what loaded */}
+                <h3 className="text-[10px] font-bold text-[var(--text-dim)] uppercase tracking-widest mb-2">THIS IMAGE</h3>
                 <div className="flex gap-2 mb-3">
                   <div className="flex-1 bg-black/30 rounded px-2 py-1.5 text-center">
-                    <div className="text-[14px] font-bold text-emerald-400">{selectedImage?.detections.length ?? 0}</div>
-                    <div className="text-[8px] text-[var(--text-dim)] uppercase tracking-wider">Detections</div>
+                    <div className="text-[14px] font-bold text-emerald-400">{selectedImage?.detections.filter(d => !d.isFalsePositive).length ?? 0}</div>
+                    <div className="text-[8px] text-[var(--text-dim)] uppercase tracking-wider">Detected</div>
+                  </div>
+                  <div className="flex-1 bg-black/30 rounded px-2 py-1.5 text-center">
+                    <div className="text-[14px] font-bold text-red-400">{selectedImage?.detections.filter(d => d.isFalsePositive).length ?? 0}</div>
+                    <div className="text-[8px] text-[var(--text-dim)] uppercase tracking-wider">False +</div>
                   </div>
                   <div className="flex-1 bg-black/30 rounded px-2 py-1.5 text-center">
                     <div className={cn("text-[14px] font-bold", (selectedImage?.annotations.length ?? 0) > 0 ? "text-yellow-400" : "text-[var(--text-dim)]")}>
                       {selectedImage?.annotations.length ?? 0}
                     </div>
-                    <div className="text-[8px] text-[var(--text-dim)] uppercase tracking-wider">Annotations</div>
+                    <div className="text-[8px] text-[var(--text-dim)] uppercase tracking-wider">Missed</div>
                   </div>
                 </div>
                 {!selectedImage && <p className="text-[10px] text-[var(--text-dim)] italic">Select an image to review.</p>}
-                {selectedImage && !selectedImage.detections.length && !selectedImage.annotations.length &&
-                  <p className="text-[10px] text-[var(--text-dim)] italic">No detections on this image.</p>}
                 <div className="space-y-2">
                   {selectedImage?.detections.map(det => (
                     <div key={det.id}
@@ -1959,8 +1926,8 @@ export default function App() {
                         <div className="text-[11px] font-bold text-white uppercase">{det.label}</div>
                         <div className="text-[9px] text-[var(--text-dim)] font-mono">{Math.round(det.confidence * 100)}% conf</div>
                       </div>
-                      <span className={cn("text-[8px] font-bold uppercase tracking-tighter", det.isFalsePositive ? "text-red-500" : "text-emerald-500")}>
-                        {det.isFalsePositive ? "FALSE +" : "VALID"}
+                      <span className={cn("text-[9px] font-bold uppercase shrink-0", det.isFalsePositive ? "text-red-500" : "text-emerald-500")}>
+                        {det.isFalsePositive ? "✕ FP" : "✓"}
                       </span>
                     </div>
                   ))}
@@ -1978,31 +1945,16 @@ export default function App() {
                   ))}
                 </div>
               </div>
-
-              {/* Guide */}
-              <div className="bg-[var(--accent)]/5 p-4 rounded-lg border border-[var(--accent)]/20 text-[11px] text-[var(--text-dim)] space-y-2 leading-relaxed">
-                <h3 className="text-[10px] font-bold text-[var(--accent)] uppercase tracking-widest mb-2">HOW TO ANNOTATE</h3>
-                <p><span className="text-[var(--accent)] font-bold">Click</span> any detection box to mark it as a false positive (turns red). Or click the item in the list on the left.</p>
-                <p><span className="text-[var(--accent)] font-bold">Drag</span> on the image to draw a "Missed Target" box around anything the AI missed.</p>
-                <p>Hover a yellow box and click <span className="text-white font-bold">✕</span> to remove it, or press <span className="text-white font-bold">UNDO</span>.</p>
-                <div className="mt-2 space-y-1 text-[10px]">
-                  <p><span className="inline-block w-2 h-2 rounded-sm bg-red-500 mr-1"></span>CoTS / starfish</p>
-                  <p><span className="inline-block w-2 h-2 rounded-sm bg-blue-500 mr-1"></span>Giant clam</p>
-                  <p><span className="inline-block w-2 h-2 rounded-sm bg-orange-500 mr-1"></span>Bleaching</p>
-                  <p><span className="inline-block w-2 h-2 rounded-sm bg-purple-500 mr-1"></span>Fish</p>
-                  <p><span className="inline-block w-2 h-2 rounded-sm bg-emerald-500 mr-1"></span>Other</p>
-                </div>
-              </div>
             </div>
 
             {/* Canvas */}
-            <div className="flex-1 bg-black flex flex-col relative overflow-hidden">
+            <div className="flex-1 bg-[var(--bg-main)] flex flex-col relative overflow-hidden">
               {/* Toolbar */}
-              <div className="h-12 bg-black/40 border-b border-[var(--border)] flex items-center justify-between px-6 z-10">
+              <div className="h-12 bg-[var(--bg-header)] border-b border-[var(--border)] flex items-center justify-between px-6 z-10">
                 <div className="flex items-center gap-3">
                   <Button variant="ghost" size="sm" className="text-[var(--text-dim)] hover:text-white gap-2" onClick={() => navigateImages("prev")}><ArrowLeft className="w-4 h-4" />PREV</Button>
                   <Button variant="ghost" size="sm" className="text-[var(--text-dim)] hover:text-white gap-2" onClick={() => navigateImages("next")}>NEXT<ArrowRight className="w-4 h-4" /></Button>
-                  {selectedImage && <span className="text-[10px] font-mono text-[var(--text-dim)]">{filteredImages.findIndex(i => i.id === selectedImageId) + 1} / {filteredImages.length}</span>}
+                  {selectedImage && <span className="text-sm font-bold text-white">{filteredImages.findIndex(i => i.id === selectedImageId) + 1} / {filteredImages.length}</span>}
                 </div>
                 <div className="flex items-center gap-2">
                   <Button variant="ghost" size="sm" className="text-[var(--text-dim)] hover:text-white gap-2" onClick={undoAnnotation} disabled={!currentImageHistory.length}><Undo className="w-4 h-4" />UNDO</Button>
@@ -2015,25 +1967,42 @@ export default function App() {
                   <span className="text-[10px] text-yellow-400 font-mono gap-2 flex items-center" title="Use Save in the header to save your session">
                     <Save className="w-3 h-3" />SAVE OFTEN
                   </span>
-                  <div className="w-px h-4 bg-[var(--border)]" />
-                  <Button size="sm" className="reef-button-primary h-7 px-3 text-[10px] gap-1.5"
-                    onClick={exportAndTrain}
-                    disabled={images.filter(i => i.status === "completed" || i.annotations.length > 0).length === 0}>
-                    <Cpu className="w-3 h-3" />Export &amp; Retrain
-                  </Button>
                 </div>
               </div>
 
               {/* Control hint */}
-              <div className="px-4 py-1 bg-black/30 border-b border-[var(--border)]/50 text-[9px] text-[var(--text-dim)] flex gap-4">
+              <div className="px-4 py-1 bg-[var(--bg-header)] border-b border-[var(--border)] text-[9px] text-[var(--text-dim)] flex gap-4">
                 <span><span className="text-white">Drag</span> — draw box</span>
                 <span><span className="text-white">Space+drag</span> — pan</span>
                 <span><span className="text-white">Scroll</span> — zoom</span>
                 <span className="ml-auto opacity-60">📱 Apple Pencil supported</span>
               </div>
 
-              {/* Image + overlays */}
+              {/* Image canvas */}
               <div ref={canvasWrapperRef} className="flex-1 relative flex items-center justify-center overflow-hidden" onWheel={handleWheel}>
+                {/* End of photos overlay */}
+                {filteredImages.length > 0 && selectedImageId !== null &&
+                  filteredImages.findIndex(i => i.id === selectedImageId) >= filteredImages.length - 1 && (
+                  <div className="absolute inset-0 flex items-center justify-center z-20 bg-[var(--bg-main)]/80 backdrop-blur-sm">
+                    <div className="bg-[var(--bg-header)] border border-[var(--accent)]/40 rounded-2xl p-10 text-center shadow-2xl mx-4 space-y-5 max-w-sm w-full">
+                      <div className="text-5xl">🎉</div>
+                      <h3 className="text-2xl font-bold text-white uppercase tracking-widest">All Photos Reviewed!</h3>
+                      <p className="text-[var(--text-dim)] text-sm">
+                        You have reached the end of {filteredImages.length} images.<br/>
+                        Ready to train your model with your corrections.
+                      </p>
+                      <div className="flex flex-col gap-2">
+                        <Button className="reef-button-primary w-full h-12 text-base" onClick={() => setActiveTab("train")}>
+                          Next Step — Train Model →
+                        </Button>
+                        <Button variant="outline" className="w-full border-[var(--border)] text-[var(--text-dim)] hover:text-white text-sm"
+                          onClick={() => { const first = filteredImages[0]; if (first) setSelectedImageId(first.id); }}>
+                          ← Back to Start
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {selectedImage ? (
                   <div ref={imageContainerRef}
                     className="relative"
@@ -2078,8 +2047,6 @@ export default function App() {
                   </div>
                 )}
               </div>
-
-
             </div>
             </div>
             )} {/* end images */}
@@ -2183,13 +2150,22 @@ export default function App() {
           <div className="flex-1 p-8 overflow-y-auto no-scrollbar space-y-8">
             <div className="max-w-4xl space-y-8">
 
-              <div className="flex items-center gap-3">
-                <Cpu className="w-8 h-8 text-pink-500" />
-                <div>
-                  <h2 className="text-2xl font-bold text-white uppercase tracking-widest">Train Local Model</h2>
-                  <p className="text-[11px] text-[var(--text-dim)] mt-0.5">Train YOLOv8 on your annotated images — no Roboflow subscription needed.</p>
-                </div>
-              </div>
+              <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold text-white uppercase tracking-widest">Step 5 — Train Your Model</h2>
+              {trainDone && (
+                <Button className="reef-button-primary px-6 h-10 gap-2" onClick={async () => {
+                  // Auto-load the newly trained model
+                  if (trainDone.model_path) {
+                    await loadSavedModel(trainDone.model_path, "primary");
+                  }
+                  // Clear images so user starts fresh
+                  setImages([]);
+                  setActiveTab("upload");
+                }}>
+                  Test New Model →
+                </Button>
+              )}
+            </div>
 
               {/* ── Current session summary ─────────────────────────────── */}
               {(() => {
@@ -2235,28 +2211,35 @@ export default function App() {
                     )}
                     {exportable.length > 0 && (
                       <div className="space-y-3">
-                        <div className="flex gap-2 p-1 bg-black/30 rounded border border-[var(--border)]">
+                        <div className="flex gap-1 p-1 bg-black/30 rounded border border-[var(--border)]">
                           {([
-                            { id: "annotated_only", label: "Annotated only", desc: `${images.filter(i => i.annotations.length > 0 || i.detections.length > 0).length} images` },
-                            { id: "all_processed",  label: "All processed",  desc: `${exportable.length} images` },
+                            { id: "annotated_only", label: "Annotated", desc: `${images.filter(i => i.annotations.length > 0 || i.detections.length > 0).length} imgs` },
+                            { id: "all_processed",  label: "All",        desc: `${images.filter(i => i.status === "completed" || i.annotations.length > 0).length} imgs` },
+                            { id: "negatives_only", label: "Negatives",  desc: `${images.filter(i => i.detections.some(d => d.isFalsePositive)).length} imgs` },
                           ] as const).map(opt => (
                             <button key={opt.id} onClick={() => setExportMode(opt.id)}
-                              className={cn("flex-1 py-1.5 px-2 rounded text-[10px] font-bold transition-all text-center",
+                              className={cn("flex-1 py-1.5 px-1 rounded text-[9px] font-bold transition-all text-center",
                                 exportMode === opt.id ? "bg-[var(--accent)] text-black" : "text-[var(--text-dim)] hover:text-white")}>
                               {opt.label}
                               <span className="block text-[8px] font-normal opacity-70">{opt.desc}</span>
                             </button>
                           ))}
                         </div>
+                        {exportMode === "negatives_only" && (
+                          <div className="p-2 bg-orange-500/10 border border-orange-500/20 rounded text-[10px] text-orange-300 space-y-1">
+                            <p className="font-bold">Hard Negative Mining</p>
+                            <p>Trains only on false positive images with empty labels — teaches the model to stop making specific mistakes. Use 10-20 epochs, fine-tune from your current best model.</p>
+                          </div>
+                        )}
                         {exportMode === "all_processed" && (
-                          <p className="text-[10px] text-yellow-400">⚠ Including unannotated images can reduce accuracy — only use if most images have detections.</p>
+                          <p className="text-[10px] text-yellow-400">⚠ Including unannotated images can reduce accuracy.</p>
                         )}
                         {exportMode === "annotated_only" && images.filter(i => i.annotations.length > 0 || i.detections.some(d => !d.isFalsePositive)).length < 50 && (
-                          <p className="text-[10px] text-yellow-400">⚠ Fewer than 50 annotated images — consider annotating more before retraining for best results.</p>
+                          <p className="text-[10px] text-yellow-400">⚠ Fewer than 50 annotated images — annotate more for best results.</p>
                         )}
                         <Button size="sm" className="reef-button-primary w-full gap-2 h-9"
                           onClick={exportAndTrain}>
-                          <Cpu className="w-4 h-4" />Export &amp; Retrain from current session →
+                          Train with Current Annotations →
                         </Button>
                       </div>
                     )}
@@ -2266,7 +2249,14 @@ export default function App() {
 
               {/* ── Step 1: Dataset ─────────────────────────────────────── */}
               <div className="reef-card space-y-4">
-                <h3 className="text-[10px] font-bold text-[var(--text-dim)] uppercase tracking-widest">Step 1 — Dataset</h3>
+                <button className="w-full flex items-center justify-between" onClick={() => setDatasetExpanded(p => !p)}>
+                  <h3 className="text-[10px] font-bold text-[var(--text-dim)] uppercase tracking-widest">
+                    Step 1 — Use a saved dataset
+                    {trainDatasetPath && !datasetExpanded && <span className="ml-2 text-emerald-400 font-normal normal-case">✓ selected</span>}
+                  </h3>
+                  <span className="text-[var(--text-dim)]">{datasetExpanded ? "▲" : "▼"}</span>
+                </button>
+                {datasetExpanded && <>
 
                 <div className="grid grid-cols-2 gap-4">
                   {/* Upload a zip */}
@@ -2274,7 +2264,7 @@ export default function App() {
                     onClick={() => trainFileRef.current?.click()}>
                     <DownloadCloud className="w-8 h-8 mx-auto mb-2 text-[var(--text-dim)]" />
                     <p className="text-[12px] font-bold text-white">Upload Export Zip</p>
-                    <p className="text-[10px] text-[var(--text-dim)] mt-1">Use the zip from the EXPORT tab</p>
+                    <p className="text-[10px] text-[var(--text-dim)] mt-1">Drop a training zip from your Downloads folder</p>
                     {trainUploading && <p className="text-[10px] text-[var(--accent)] mt-2 animate-pulse">Uploading…</p>}
                     <input type="file" ref={trainFileRef} accept=".zip" className="hidden" onChange={async e => {
                       const file = e.target.files?.[0]; if (!file) return;
@@ -2319,6 +2309,7 @@ export default function App() {
                     )}
                   </div>
                 </div>
+                </>}
               </div>
 
               {/* ── Step 2: Config ──────────────────────────────────────── */}
@@ -2408,12 +2399,27 @@ export default function App() {
                       </select>
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold text-[var(--text-dim)] uppercase tracking-wider block mb-2">Model Name <span className="text-[9px] font-normal opacity-50">(prefix: cots_, fish_, clam_)</span></label>
+                      <label className="text-[10px] font-bold text-[var(--text-dim)] uppercase tracking-wider block mb-2">Model Name</label>
+                      <div className="flex gap-1 mb-2 flex-wrap">
+                        {(["cots", "fish", "clam", "bleaching", "+ custom"] as const).map(prefix => (
+                          <button key={prefix} type="button"
+                            onClick={() => {
+                              if (prefix === "+ custom") { setModelName(""); }
+                              else { setModelName(prev => prefix + "_" + prev.replace(/^(cots|fish|clam|bleaching)_?/, "")); }
+                            }}
+                            className={cn("px-3 py-1 rounded text-[10px] font-bold uppercase tracking-wider border transition-all",
+                              modelName.toLowerCase().startsWith(prefix.replace("+ custom", ""))
+                                ? "bg-[var(--accent)] text-black border-[var(--accent)]"
+                                : "border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--accent)] hover:text-white")}>
+                            {prefix}
+                          </button>
+                        ))}
+                      </div>
                       <input
                         type="text"
                         value={modelName}
                         onChange={e => setModelName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, "_"))}
-                        placeholder="e.g. angelfish_v1, cots_survey_2026"
+                        placeholder="e.g. cots_survey_v1"
                         className="w-full bg-black/40 border border-[var(--border)] rounded px-3 py-2 text-sm text-white placeholder-[var(--text-dim)] focus:border-[var(--accent)] outline-none font-mono"
                       />
                       <p className="text-[9px] text-[var(--text-dim)] mt-1">Saved as <span className="font-mono text-white">{modelName ? modelName + ".pt" : "reef_train_[timestamp].pt"}</span></p>
@@ -2424,13 +2430,18 @@ export default function App() {
 
               {/* ── Step 3: Run ─────────────────────────────────────────── */}
               <div className="reef-card space-y-4">
-                <h3 className="text-[10px] font-bold text-[var(--text-dim)] uppercase tracking-widest">Step 3 — Train</h3>
+
 
                 <div className="flex gap-3">
                   {!trainRunning ? (
                     <Button className="reef-button-primary h-12 px-8 gap-2"
-                      disabled={!trainDatasetPath || !trainBaseModel}
+                      disabled={!trainBaseModel || trainRunning} title={!trainBaseModel ? "Please select a base model above" : ""}
                       onClick={async () => {
+                        // If no saved dataset selected, auto-export current session first
+                        if (!trainDatasetPath) {
+                          await exportAndTrain();
+                          return;
+                        }
                         setTrainRunning(true); setTrainProgress([]); setTrainDone(null); setTrainError(null);
                         const r = await fetch("/api/train/start", {
                           method: "POST", headers: { "Content-Type": "application/json" },
@@ -2556,16 +2567,14 @@ export default function App() {
                       </div>
                     )}
                     <p className="text-[11px] text-[var(--text-dim)]">Model saved to <span className="font-mono text-emerald-400">models/</span> — go to MODELS tab to load it.</p>
-                    <div className="flex gap-2">
-                      <Button size="sm" className="reef-button-primary gap-2" onClick={() => setActiveTab("models")}>
-                        <Brain className="w-4 h-4" />Go to Models →
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" className="reef-button-primary gap-2" onClick={async () => {
+                        if (trainDone?.model_path) await loadSavedModel(trainDone.model_path, "primary");
+                        setImages([]);
+                        setActiveTab("upload");
+                      }}>
+                        Test New Model →
                       </Button>
-                      {(trainDone.mAP50 ?? 0) < 0.7 && (
-                        <Button size="sm" variant="outline" className="border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/10 gap-2"
-                          onClick={() => setActiveTab("annotate")}>
-                          Annotate more →
-                        </Button>
-                      )}
                     </div>
                   </div>
                 )}
@@ -2579,13 +2588,7 @@ export default function App() {
                 )}
               </div>
 
-              {/* Estimated time */}
-              <div className="reef-card text-[11px] text-[var(--text-dim)] space-y-1">
-                <p className="font-bold text-white text-[12px]">Estimated training time</p>
-                <p>With a modern GPU (RTX 3060+): ~1–2 min/epoch at 640px on 1,000 images.</p>
-                <p>10,000 images × 50 epochs ≈ 2–4 hours. Leave it running overnight for 100+ epochs.</p>
-                <p>CPU-only: ~10× slower — use Nano model and fewer epochs for testing.</p>
-              </div>
+
 
             </div>
           </div>
@@ -2596,13 +2599,8 @@ export default function App() {
           <div className="flex-1 p-8 overflow-y-auto no-scrollbar">
             <div className="max-w-3xl space-y-8">
 
-              <div className="flex items-center gap-3">
-                <Globe className="w-8 h-8 text-[var(--accent)]" />
-                <div>
-                  <h2 className="text-2xl font-bold text-white uppercase tracking-widest">Image Scraper</h2>
-                  <p className="text-[11px] text-[var(--text-dim)] mt-0.5">Search the web for training images by species name — downloads to a zip ready for training.</p>
-                </div>
-              </div>
+              <h2 className="text-2xl font-bold text-white uppercase tracking-widest">Collect Training Images</h2>
+              <p className="text-[11px] text-[var(--text-dim)] mt-1">Search the web for training images by species name — downloads to a zip ready for training.</p>
 
               {/* Search form */}
               <div className="reef-card space-y-5">
@@ -2766,7 +2764,7 @@ export default function App() {
                     { n:1, text: "Search for your species above — zip saves to your Downloads folder automatically." },
                     { n:2, text: "Go to 2. UPLOAD tab → load that zip — all images appear in your session." },
                     { n:3, text: "Go to 4. ANNOTATE tab → draw boxes around the species in each image." },
-                    { n:4, text: "Go to 5. TRAIN tab → Export & Retrain — uses your annotated images to build the model." },
+                    { n:4, text: "Go to 5. TRAIN tab → pick your options and press Start Training." },
                   ].map(s => (
                     <div key={s.n} className="flex gap-3 items-start">
                       <div className="w-5 h-5 rounded-full bg-[var(--accent)]/20 text-[var(--accent)] flex items-center justify-center flex-shrink-0 text-[10px] font-bold">{s.n}</div>
@@ -2788,11 +2786,8 @@ export default function App() {
 
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="text-3xl">📊</span>
-                  <div>
-                    <h2 className="text-2xl font-bold text-white uppercase tracking-widest">Model Training History</h2>
-                    <p className="text-[11px] text-[var(--text-dim)] mt-0.5">Track your model accuracy over time — every training run logged automatically.</p>
-                  </div>
+                  <h2 className="text-2xl font-bold text-white uppercase tracking-widest">Training History</h2>
+                  <p className="text-[11px] text-[var(--text-dim)] mt-1">Track your model accuracy over time — every training run logged automatically.</p>
                 </div>
                 {trainingHistory.length > 0 && (
                   <Button variant="outline" size="sm"
@@ -2933,8 +2928,7 @@ export default function App() {
           <div className="flex-1 p-8 overflow-y-auto no-scrollbar">
             <div className="max-w-3xl space-y-8">
               <div className="flex items-center gap-3">
-                <Globe className="w-7 h-7 text-[var(--accent)]" />
-                <h2 className="text-2xl font-bold text-white uppercase tracking-widest">Remote Access via Cloudflare Tunnel</h2>
+<h2 className="text-2xl font-bold text-white uppercase tracking-widest">Remote Access</h2>
               </div>
               <p className="text-[var(--text-dim)] text-sm">Access from phone, tablet, or boat laptop — free, no hosting costs.</p>
               {[
@@ -2970,8 +2964,7 @@ export default function App() {
           <div className="flex-1 p-8 overflow-y-auto no-scrollbar space-y-8">
             <div className="max-w-3xl space-y-8">
               <div className="flex items-center gap-3">
-                <FileArchive className="w-7 h-7 text-pink-500" />
-                <h2 className="text-2xl font-bold text-white uppercase tracking-widest">Training Export</h2>
+                <h2 className="text-2xl font-bold text-white uppercase tracking-widest">Export Dataset</h2>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 {[

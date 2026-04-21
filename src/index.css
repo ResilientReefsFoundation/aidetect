@@ -7,22 +7,38 @@
   --font-display: "Orbitron", sans-serif;
 }
 
+/* ── Dark theme (default) ─────────────────────────────────────────────────── */
 :root {
-  --bg-main: #060b10;
-  --bg-side: #0a1118;
+  --bg-main:   #060b10;
+  --bg-side:   #0a1118;
   --bg-header: #0d161f;
-  --accent: #14b8a6;
-  --accent-hover: #0d9488;
+  --accent:         #14b8a6;
+  --accent-hover:   #0d9488;
   --text-main: #e2e8f0;
-  --text-dim: #64748b;
-  --border: #1e293b;
-  
+  --text-dim:  #64748b;
+  --border:    #1e293b;
   --radius: 0.5rem;
-  
   --primary: var(--accent);
   --primary-foreground: #000;
   --muted: #1e293b;
   --muted-foreground: #64748b;
+  --ring: var(--accent);
+}
+
+/* ── Light theme ──────────────────────────────────────────────────────────── */
+:root.light {
+  --bg-main:   #f0f4f8;
+  --bg-side:   #e2e8f0;
+  --bg-header: #ffffff;
+  --accent:         #0d9488;
+  --accent-hover:   #0f766e;
+  --text-main: #0f172a;
+  --text-dim:  #475569;
+  --border:    #cbd5e1;
+  --primary: var(--accent);
+  --primary-foreground: #fff;
+  --muted: #e2e8f0;
+  --muted-foreground: #475569;
   --ring: var(--accent);
 }
 
@@ -33,28 +49,15 @@
 }
 
 /* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: var(--bg-main);
-}
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-dim);
-}
-
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-main); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+.no-scrollbar::-webkit-scrollbar { display: none; }
 
 /* Reef Suite Specifics */
 .reef-card {
-  @apply bg-[#0a1118] border border-[#1e293b] rounded-lg p-4;
+  @apply bg-[var(--bg-side)] border border-[var(--border)] rounded-lg p-4;
 }
 
 .reef-button-primary {
@@ -64,3 +67,61 @@
 .reef-tab-active {
   @apply text-[var(--accent)] border-b-2 border-[var(--accent)];
 }
+
+/* Light mode overrides for elements using hardcoded dark colours */
+:root.light .bg-black\/20 { background-color: rgba(0,0,0,0.05) !important; }
+:root.light .bg-black\/30 { background-color: rgba(0,0,0,0.07) !important; }
+:root.light .bg-black\/40 { background-color: rgba(0,0,0,0.08) !important; }
+:root.light .bg-black\/60 { background-color: rgba(0,0,0,0.10) !important; }
+:root.light select, :root.light .bg-\[\#1a1a2e\] {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* ── Light mode text fixes ─────────────────────────────────────────────────── */
+:root.light h1, :root.light h2, :root.light h3 {
+  color: #0f172a !important;
+}
+:root.light .text-white {
+  color: #0f172a !important;
+}
+:root.light .text-\[var\(--text-dim\)\] {
+  color: #475569 !important;
+}
+:root.light .bg-\[var\(--bg-header\)\] {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+:root.light .bg-\[var\(--bg-side\)\] {
+  background-color: #f1f5f9 !important;
+}
+:root.light .reef-card {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+:root.light .border-\[var\(--border\)\] {
+  border-color: #e2e8f0 !important;
+}
+:root.light input, :root.light textarea {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+:root.light input::placeholder {
+  color: #94a3b8 !important;
+}
+:root.light .font-mono {
+  color: #1e40af !important;
+}
+:root.light .text-emerald-400 { color: #047857 !important; }
+:root.light .text-emerald-500 { color: #047857 !important; }
+:root.light .text-red-400, :root.light .text-red-500 { color: #dc2626 !important; }
+:root.light .text-yellow-400 { color: #b45309 !important; }
+:root.light .text-orange-300, :root.light .text-orange-400 { color: #c2410c !important; }
+:root.light .bg-emerald-500\/10 { background-color: #d1fae5 !important; }
+:root.light .bg-red-500\/10 { background-color: #fee2e2 !important; }
+:root.light .bg-yellow-500\/10 { background-color: #fef9c3 !important; }
+:root.light .text-\[var\(--accent\)\] { color: #0f766e !important; }
+:root.light nav button { color: #475569 !important; }
+:root.light nav button.text-\[var\(--accent\)\] { color: #0f766e !important; }
